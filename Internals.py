@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any, Callable
 
 
 class File:
@@ -32,6 +33,16 @@ class File:
     def print(self):
         for line in self.content:
             print(line)
+
+    def for_line(self, method: Callable[[str], Any]):
+        for line in self.content:
+            method(line)
+
+    @property
+    def extension(self) -> str:
+        if "." in self.name:
+            return self.name.split(".")[-1]
+        return ""
 
 
 class Folder:
