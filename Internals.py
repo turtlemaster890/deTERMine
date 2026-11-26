@@ -101,16 +101,22 @@ class Folder:
                 return content
         return None
 
-    def retrieve_path(self, path: str) -> File | Folder | None:
+    def retrieve_path(self, path: str, root: Folder, prefer: type[Folder | File] | None = None) -> File | Folder | None:
         parts = path.split("/")
-        return self.retrieve_path_by_parts(parts)
+        return self.retrieve_path_by_parts(parts, root, prefer=prefer)
 
-    def retrieve_path_by_parts(self, parts: list[str]) -> File | Folder | None:
-        current_folder: Folder = self
+    def retrieve_path_by_parts(self, parts: list[str], root: Folder, prefer: type[Folder | File] | None = None) -> File | Folder | None:
+        current_folder: Folder = root
+
+        if parts[0] == "." or parts[0] == "..":
+            current_folder = self
+
+        elif parts[0] == "root":
+            parts = parts[1:]
 
         for part in parts:
-            if self.matches(part):
-                continue
+            # if self.matches(part):
+            #     continue
 
             if part == ".":
                 continue
@@ -122,7 +128,16 @@ class Folder:
                     return None
                 continue
 
-            next_content = current_folder.get_content(part)
+            if prefer is Folder:
+                next_content = current_folder.get_folder(part)
+                if next_content is None:
+                    next_content = current_folder.get_file(part)
+            elif prefer is File:
+                next_content = current_folder.get_file(part)
+                if next_content is None:
+                    next_content = current_folder.get_folder(part)
+            else:
+                next_content = current_folder.get_content(part)
             if next_content is None:
                 return None
 
@@ -132,3 +147,17 @@ class Folder:
                 return next_content
 
         return current_folder
+
+    def find(self, name: str, exact: bool) -> list[File | Folder]:
+        results: list[File | Folder] = []
+        for content in self.contents:
+            if exact:
+                if content.matches(name):
+                    results.append(content)
+            else:
+                if name in content.name:
+                    results.append(content)
+
+            if isinstance(content, Folder):
+                results.extend(content.find(name, exact))
+        return results

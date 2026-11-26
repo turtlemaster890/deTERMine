@@ -49,7 +49,9 @@ def cmd(name: str, description: str = "", usage: str | None = None):
     if usage is None:
         usage = name
 
-    def decorator(func: Callable[[list[str], Callable[[str], Any], list[str] | None], Any]):
+    def decorator(
+        func: Callable[[list[str], Callable[[str], Any], list[str] | None], Any],
+    ):
         commands[name] = Command(name, description, usage, func)
         return func
 
@@ -57,13 +59,17 @@ def cmd(name: str, description: str = "", usage: str | None = None):
 
 
 @cmd("exit", "Exit the terminal")
-def exit_terminal(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def exit_terminal(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     global running
     running = False
 
 
 @cmd("cd", "Change the current directory", "cd <folder_name>")
-def change_directory(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def change_directory(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     global cwd
     if piped:
         folder_name = piped[0]
@@ -72,7 +78,9 @@ def change_directory(args: list[str], out: Callable[[str], Any], piped: list[str
             out("Missing folder name.")
             return
         folder_name = args[0]
-    next_folder = cwd.retrieve_path(folder_name)
+    next_folder = cwd.retrieve_path(folder_name, cwd, prefer=Folder)
+    if not isinstance(next_folder, Folder):
+        next_folder = cwd.retrieve_path(folder_name, root, prefer=Folder)
     if isinstance(next_folder, Folder):
         cwd = next_folder
     else:
@@ -80,24 +88,29 @@ def change_directory(args: list[str], out: Callable[[str], Any], piped: list[str
 
 
 @cmd("ls", "List the contents of the current directory")
-def list_contents(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def list_contents(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     for content in cwd.contents:
         out(content.name)
 
 
 @cmd("rd", "Print out the contents of a file", "rd <file_name>")
-def read_file(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def read_file(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     if piped:
-        file = piped[0]
+        file_name = piped[0]
     else:
         if len(args) < 1:
             out("Missing file name.")
             return
-        file = cwd.retrieve_path(args[0])
+        file_name = args[0]
+    file = cwd.retrieve_path(file_name, root)
     if isinstance(file, File):
         file.for_line(out)
     else:
-        out(f"File {file} not found.")
+        out(f"File {file_name} not found.")
 
 
 @cmd("rn", "Rename a file or folder", "rn <old_name> <new_name>")
@@ -112,12 +125,14 @@ def rename(args: list[str], out: Callable[[str], Any], piped: list[str] | None =
     old_name = args[0]
     new_name = args[1]
 
-    content = cwd.get_content(old_name)
+    content = cwd.retrieve_path(old_name, root)
     if content is None:
         out(f"File or folder {old_name} not found.")
         return
 
-    conflict = cwd.get_content(new_name)
+    conflict = cwd.retrieve_path(
+        content.path.removesuffix(content.name) + new_name, root
+    )
     if conflict is not None:
         out(f"A file or folder with name {new_name} already exists.")
         return
@@ -126,24 +141,28 @@ def rename(args: list[str], out: Callable[[str], Any], piped: list[str] | None =
 
 
 @cmd("ex", "Execute a file", "ex <file_name>")
-def execute_file(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def execute_file(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     if piped:
-        file = piped[0]
+        file_name = piped[0]
     else:
         if len(args) < 1:
             out("Missing file name.")
             return
+        file_name = args[0]
 
-        file = cwd.retrieve_path(args[0])
+    file = cwd.retrieve_path(file_name, root)
     if not isinstance(file, File):
-        out(f"File {file} not found.")
+        out(f"File {file_name} not found.")
         return
 
     if file.extension != "ex":
-        out(f"File {file} is not a .ex file.")
+        out(f"File {file_name} is not a .ex file.")
         return
 
     file.for_line(lambda line: run_command_piping(line, out))
+
 
 @cmd("echo", "Print a message to the output buffer", "echo <message>")
 def echo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
@@ -157,8 +176,37 @@ def echo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     out(message)
 
 
+@cmd("fn", "Find files or folders by name", "fn <name> [--exact | -e]")
+def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+    if piped:
+        name = piped[0]
+    else:
+        if len(args) < 1:
+            out("Missing name.")
+            return
+
+        name = args[0]
+
+    exact = (
+        "--exact" in args
+        or ("--exact" in piped if piped else False)
+        or "-e" in args
+        or ("-e" in piped if piped else False)
+    )
+
+    results = cwd.find(name, exact)
+    if not results:
+        out(f"No files or folders found with name {name}.")
+        return
+
+    for result in results:
+        out(result.path)
+
+
 @cmd("pwd", "Print the current working directory")
-def print_working_directory(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+def print_working_directory(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
     out(cwd.path)
 
 
@@ -178,19 +226,59 @@ def help(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
 # }
 
 
+def split_pipes_and_strings(command: str) -> list[str]:
+    out: list[str] = []
+    in_string = False
+    current_output = ""
+    for char in command:
+        if char == '"':
+            in_string = not in_string
+            continue
+        elif char == "|" and not in_string:
+            out.append(current_output)
+            current_output = ""
+            continue
+        current_output += char
+    out.append(current_output)
+    return out
+
+
 def run_command_piping(command: str, out: Callable[[str], Any] = print):
     cmd_list = command.split(";")
     for cmd in cmd_list:
-        cmds = cmd.split("|")
+        cmds = split_pipes_and_strings(cmd)
         output_buffer: list[str] = []
         for i, c in enumerate(cmds):
             if i == len(cmds) - 1:
-                run_command(c.strip(), out, output_buffer)
+                cmds = c.split(">>")
+                if len(cmds) > 1:
+                    file = cwd.retrieve_path(cmds[1].strip(), root)
+                    if isinstance(file, File):
+                        run_command(cmds[0].strip(), file.content.append, output_buffer)
+                    else:
+                        out(f"File {cmds[1].strip()} not found.")
+                else:
+                    cmds = c.split(">")
+                    if len(cmds) > 1:
+                        file = cwd.retrieve_path(cmds[1].strip(), root)
+                        if isinstance(file, File):
+                            file.content.clear()
+                            run_command(
+                                cmds[0].strip(), file.content.append, output_buffer
+                            )
+                        else:
+                            out(f"File {cmds[1].strip()} not found.")
+                    else:
+                        run_command(c.strip(), out, output_buffer)
+
             else:
                 output_buffer.clear()
                 run_command(c.strip(), output_buffer.append, output_buffer)
 
-def run_command(command: str, out: Callable[[str], Any] = print, piped: list[str] | None = None):
+
+def run_command(
+    command: str, out: Callable[[str], Any] = print, piped: list[str] | None = None
+):
     cmd_prefix = command.split(" ")[0]
 
     if cmd_prefix in commands:
