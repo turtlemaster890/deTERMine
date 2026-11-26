@@ -58,21 +58,25 @@ def get(name: str, expected_type: type[File | Folder]) -> File | Folder | None: 
 def get(
     name: str, expected_type: type[T] | type[File | Folder]
 ) -> T | File | Folder | None:
-    content = cwd.retrieve_path(
-        name,
-        cwd,
-        prefer=expected_type if expected_type is not (File | Folder) else None,
-    )
-    if isinstance(content, expected_type):
-        return content
-    content = cwd.retrieve_path(
-        name,
-        root,
-        prefer=expected_type if expected_type is not (File | Folder) else None,
-    )
+    content = cwd.retrieve_path(name, root, prefer=expected_type if expected_type is not (File | Folder) else None)
     if isinstance(content, expected_type):
         return content
     return None
+    # content = cwd.retrieve_path(
+    #     name,
+    #     cwd,
+    #     prefer=expected_type if expected_type is not (File | Folder) else None,
+    # )
+    # if isinstance(content, expected_type):
+    #     return content
+    # content = cwd.retrieve_path(
+    #     name,
+    #     root,
+    #     prefer=expected_type if expected_type is not (File | Folder) else None,
+    # )
+    # if isinstance(content, expected_type):
+    #     return content
+    # return None
 
 
 def cmd(name: str, description: str = "", usage: str | None = None):
