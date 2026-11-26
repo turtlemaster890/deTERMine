@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -143,6 +144,29 @@ root: Folder = Folder(
 cwd: Folder = root
 
 
+@dataclass
+class Command:
+    name: str
+    description: str
+    usage: str
+    func: Callable[[list[str]], Any]
+
+
+commands: dict[str, Command] = {}
+
+
+def cmd(name: str, description: str = "", usage: str | None = None):
+    if usage is None:
+        usage = name
+
+    def decorator(func: Callable[[list[str]], Any]):
+        commands[name] = Command(name, description, usage, func)
+        return func
+
+    return decorator
+
+
+@cmd("cd", "Change the current directory", "cd <folder_name>")
 def change_directory(args: list[str]):
     global cwd
     if len(args) < 1:
@@ -156,6 +180,13 @@ def change_directory(args: list[str]):
         print(f"Folder {folder_name} not found.")
 
 
+@cmd("ls", "List the contents of the current directory")
+def list_contents(args: list[str]):
+    for content in cwd.contents:
+        print(content.name)
+
+
+@cmd("rd", "Print out the contents of a file", "rd <file_name>")
 def read_file(args: list[str]):
     if len(args) < 1:
         print("Missing file name.")
@@ -167,12 +198,25 @@ def read_file(args: list[str]):
         print(f"File {args[0]} not found.")
 
 
-commands: dict[str, Callable[[list[str]], Any]] = {
-    "cd": change_directory,
-    "ls": lambda args: [print(content.name) for content in cwd.contents],
-    "rd": read_file,
-    "pwd": lambda args: print(cwd.path),
-}
+@cmd("pwd", "Print the current working directory")
+def print_working_directory(args: list[str]):
+    print(cwd.path)
+
+
+@cmd("help", "Show this help message")
+def help(args: list[str]):
+    print("Available commands:")
+    for command in commands.values():
+        print(f"{command.name}: {command.description} ({command.usage})")
+    print()
+
+
+# commands: dict[str, Callable[[list[str]], Any]] = {
+#     "cd": change_directory,
+#     "ls": lambda args: [print(content.name) for content in cwd.contents],
+#     "rd": read_file,
+#     "pwd": lambda args: print(cwd.path),
+# }
 
 while True:
     command = input(f"{cwd.path}> ")
@@ -182,6 +226,6 @@ while True:
     cmd_prefix = command.split(" ")[0]
 
     if cmd_prefix in commands:
-        commands[cmd_prefix](get_args(command))
+        commands[cmd_prefix].func(get_args(command))
     else:
         print(f"Unknown command: {cmd_prefix}")
