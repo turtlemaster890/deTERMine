@@ -101,17 +101,23 @@ class Folder:
                 return content
         return None
 
-    def retrieve_path(self, path: str, root: Folder, prefer: type[Folder | File] | None = None) -> File | Folder | None:
+    def retrieve_path(
+        self, path: str, root: Folder, prefer: type[Folder | File] | None = None
+    ) -> File | Folder | None:
         parts = path.split("/")
         return self.retrieve_path_by_parts(parts, root, prefer=prefer)
 
-    def retrieve_path_by_parts(self, parts: list[str], root: Folder, prefer: type[Folder | File] | None = None) -> File | Folder | None:
-        current_folder: Folder = root
+    def retrieve_path_by_parts(
+        self, parts: list[str], root: Folder, prefer: type[Folder | File] | None = None
+    ) -> File | Folder | None:
+        current_folder: Folder = self
 
-        if parts[0] == "." or parts[0] == "..":
-            current_folder = self
+        # if parts[0] == "." or parts[0] == "..":
+        #     current_folder = self
 
-        elif parts[0] == "root":
+        if parts[0] == "":
+            # parts = parts[1:]
+            current_folder = root
             parts = parts[1:]
 
         for part in parts:

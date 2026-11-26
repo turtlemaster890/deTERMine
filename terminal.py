@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar, overload
 
 from Internals import File, Folder
 
@@ -44,6 +44,36 @@ class Command:
 
 commands: dict[str, Command] = {}
 
+T = TypeVar("T", File, Folder)
+
+
+@overload
+def get(name: str, expected_type: type[T]) -> T | None: ...
+
+
+@overload
+def get(name: str, expected_type: type[File | Folder]) -> File | Folder | None: ...
+
+
+def get(
+    name: str, expected_type: type[T] | type[File | Folder]
+) -> T | File | Folder | None:
+    content = cwd.retrieve_path(
+        name,
+        cwd,
+        prefer=expected_type if expected_type is not (File | Folder) else None,
+    )
+    if isinstance(content, expected_type):
+        return content
+    content = cwd.retrieve_path(
+        name,
+        root,
+        prefer=expected_type if expected_type is not (File | Folder) else None,
+    )
+    if isinstance(content, expected_type):
+        return content
+    return None
+
 
 def cmd(name: str, description: str = "", usage: str | None = None):
     if usage is None:
@@ -78,10 +108,8 @@ def change_directory(
             out("Missing folder name.")
             return
         folder_name = args[0]
-    next_folder = cwd.retrieve_path(folder_name, cwd, prefer=Folder)
-    if not isinstance(next_folder, Folder):
-        next_folder = cwd.retrieve_path(folder_name, root, prefer=Folder)
-    if isinstance(next_folder, Folder):
+    next_folder = get(folder_name, Folder)
+    if next_folder is not None:
         cwd = next_folder
     else:
         out(f"Folder {folder_name} not found.")
@@ -106,8 +134,8 @@ def read_file(
             out("Missing file name.")
             return
         file_name = args[0]
-    file = cwd.retrieve_path(file_name, root)
-    if isinstance(file, File):
+    file = get(file_name, File)
+    if file is not None:
         file.for_line(out)
     else:
         out(f"File {file_name} not found.")
@@ -125,14 +153,12 @@ def rename(args: list[str], out: Callable[[str], Any], piped: list[str] | None =
     old_name = args[0]
     new_name = args[1]
 
-    content = cwd.retrieve_path(old_name, root)
+    content = get(old_name, File | Folder)
     if content is None:
         out(f"File or folder {old_name} not found.")
         return
 
-    conflict = cwd.retrieve_path(
-        content.path.removesuffix(content.name) + new_name, root
-    )
+    conflict = get(content.path.removesuffix(content.name) + new_name, File | Folder)
     if conflict is not None:
         out(f"A file or folder with name {new_name} already exists.")
         return
@@ -152,8 +178,8 @@ def execute_file(
             return
         file_name = args[0]
 
-    file = cwd.retrieve_path(file_name, root)
-    if not isinstance(file, File):
+    file = get(file_name, File)
+    if file is None:
         out(f"File {file_name} not found.")
         return
 
@@ -252,16 +278,16 @@ def run_command_piping(command: str, out: Callable[[str], Any] = print):
             if i == len(cmds) - 1:
                 cmds = c.split(">>")
                 if len(cmds) > 1:
-                    file = cwd.retrieve_path(cmds[1].strip(), root)
-                    if isinstance(file, File):
+                    file = get(cmds[1].strip(), File)
+                    if file:
                         run_command(cmds[0].strip(), file.content.append, output_buffer)
                     else:
                         out(f"File {cmds[1].strip()} not found.")
                 else:
                     cmds = c.split(">")
                     if len(cmds) > 1:
-                        file = cwd.retrieve_path(cmds[1].strip(), root)
-                        if isinstance(file, File):
+                        file = get(cmds[1].strip(), File)
+                        if file:
                             file.content.clear()
                             run_command(
                                 cmds[0].strip(), file.content.append, output_buffer
