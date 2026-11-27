@@ -9,6 +9,8 @@ running: bool = True
 prev_superuser: bool = False
 superuser: bool = False
 
+superuser_lambda: Callable[[], bool] = lambda: superuser
+
 
 def access(condition: Callable[[], bool]):
     def decorator(func: Callable[..., Any]):
@@ -47,7 +49,16 @@ root: Folder = Folder(
             "folder1",
             [
                 File("file1.txt", ["Hello, World!"]),
-                Folder("subfolder1", [File("file2.txt", ["This is a test file."])]),
+                Folder(
+                    "subfolder1",
+                    [
+                        File(
+                            "file2.txt",
+                            ["This is a test file."],
+                            access=AccessBuilder.superuser_only(superuser_lambda),
+                        )
+                    ],
+                ),
             ],
         ),
         Folder(
@@ -82,19 +93,26 @@ T = TypeVar("T", File, Folder)
 
 
 @overload
-def get(name: str, expected_type: type[T]) -> T | None: ...
+def get(
+    name: str, expected_type: type[T], make_if_not_found: bool = False
+) -> T | None: ...
 
 
 @overload
-def get(name: str, expected_type: type[File | Folder]) -> File | Folder | None: ...
+def get(
+    name: str, expected_type: type[File | Folder], make_if_not_found: bool = False
+) -> File | Folder | None: ...
 
 
 def get(
-    name: str, expected_type: type[T] | type[File | Folder]
+    name: str,
+    expected_type: type[T] | type[File | Folder],
+    make_if_not_found: bool = False,
 ) -> T | File | Folder | None:
     content = cwd.retrieve_path(
         name,
         root,
+        make_if_not_found,
         prefer=expected_type if expected_type is not (File | Folder) else None,
     )
     if isinstance(content, expected_type):
@@ -167,7 +185,8 @@ def list_contents(
     args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
 ):
     for content in cwd.contents:
-        out(content.name)
+        if content.can_view():
+            out(content.name)
 
 
 @cmd("rd", "Print out the contents of a file", "rd <file_name>")
@@ -274,7 +293,8 @@ def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
         raise StopExecution
 
     for result in results:
-        out(result.path)
+        if result.can_view():
+            out(result.path)
 
 
 @cmd("pwd", "Print the current working directory")
@@ -339,7 +359,7 @@ def create_file(
         raise StopExecution
 
     path = "/".join(file_name.split("/")[:-1])
-    parent = get(path, Folder) if path else cwd
+    parent = get(path, Folder, True) if path else cwd
     if parent is None:
         out(f"Parent folder {path} not found.")
         raise StopExecution
@@ -366,7 +386,7 @@ def create_folder(
         raise StopExecution
 
     path = "/".join(folder_name.split("/")[:-1])
-    parent = get(path, Folder) if path else cwd
+    parent = get(path, Folder, True) if path else cwd
     if parent is None:
         out(f"Parent folder {path} not found.")
         raise StopExecution

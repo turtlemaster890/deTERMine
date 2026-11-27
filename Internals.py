@@ -24,6 +24,20 @@ class AccessBuilder:
     def default(cls) -> AccessBuilder:
         return cls()
 
+    @classmethod
+    def no_access(cls, superuser: Callable[[], bool] = lambda: False) -> AccessBuilder:
+        return cls().read(superuser).write(superuser).view(superuser)
+
+    @classmethod
+    def read_only(cls, superuser: Callable[[], bool] = lambda: False) -> AccessBuilder:
+        return cls().read(lambda: True).write(superuser).view(lambda: True)
+
+    @classmethod
+    def superuser_only(
+        cls, superuser: Callable[[], bool] = lambda: False
+    ) -> AccessBuilder:
+        return cls().read(superuser).write(superuser).view(superuser)
+
 
 class File:
     def __init__(
@@ -69,6 +83,9 @@ class File:
         for line in lines:
             method(line)
 
+    def can_view(self) -> bool:
+        return self.access._view()
+
     @property
     def extension(self) -> str:
         if "." in self.name:
@@ -97,6 +114,7 @@ class Folder:
         contents: list[File | Folder],
         path: str = "",
         parent: Folder | None = None,
+        access: AccessBuilder = AccessBuilder.default(),
     ):
         self.name = name
         self.contents = contents
@@ -105,6 +123,8 @@ class Folder:
         self.path = path + name + "/"
 
         self.parent: Folder | None = parent
+
+        self.access = access
 
         for content in self.contents:
             content.update_path(self.path)
@@ -155,13 +175,23 @@ class Folder:
         return None
 
     def retrieve_path(
-        self, path: str, root: Folder, prefer: type[Folder | File] | None = None
+        self,
+        path: str,
+        root: Folder,
+        make_if_not_found: bool = False,
+        prefer: type[Folder | File] | None = None,
     ) -> File | Folder | None:
         parts = path.split("/")
-        return self.retrieve_path_by_parts(parts, root, prefer=prefer)
+        return self.retrieve_path_by_parts(
+            parts, root, make_if_not_found, prefer=prefer
+        )
 
     def retrieve_path_by_parts(
-        self, parts: list[str], root: Folder, prefer: type[Folder | File] | None = None
+        self,
+        parts: list[str],
+        root: Folder,
+        make_if_not_found: bool = False,
+        prefer: type[Folder | File] | None = None,
     ) -> File | Folder | None:
         current_folder: Folder = self
 
@@ -198,7 +228,22 @@ class Folder:
             else:
                 next_content = current_folder.get_content(part)
             if next_content is None:
-                return None
+                if make_if_not_found:
+                    if prefer is Folder:
+                        next_content = Folder(
+                            part, [], current_folder.path, current_folder
+                        )
+                    elif prefer is File:
+                        next_content = File(
+                            part, [], current_folder.path, current_folder
+                        )
+                    else:
+                        next_content = Folder(
+                            part, [], current_folder.path, current_folder
+                        )
+                    current_folder.add_content(next_content)
+                else:
+                    return None
 
             if isinstance(next_content, Folder):
                 current_folder = next_content
@@ -220,3 +265,6 @@ class Folder:
             if isinstance(content, Folder):
                 results.extend(content.find(name, exact))
         return results
+
+    def can_view(self) -> bool:
+        return self.access._view()
