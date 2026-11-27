@@ -18,7 +18,7 @@ def get_args(command: str) -> list[str]:
 
 
 root: Folder = Folder(
-    "root",
+    "",
     [
         Folder(
             "folder1",
@@ -58,7 +58,11 @@ def get(name: str, expected_type: type[File | Folder]) -> File | Folder | None: 
 def get(
     name: str, expected_type: type[T] | type[File | Folder]
 ) -> T | File | Folder | None:
-    content = cwd.retrieve_path(name, root, prefer=expected_type if expected_type is not (File | Folder) else None)
+    content = cwd.retrieve_path(
+        name,
+        root,
+        prefer=expected_type if expected_type is not (File | Folder) else None,
+    )
     if isinstance(content, expected_type):
         return content
     return None
@@ -206,7 +210,7 @@ def echo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     out(message)
 
 
-@cmd("fn", "Find files or folders by name", "fn <name> [--exact | -e]")
+@cmd("find", "Find files or folders by name", "find <name> [--exact | -e]")
 def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
     if piped:
         name = piped[0]
@@ -238,6 +242,43 @@ def print_working_directory(
     args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
 ):
     out(cwd.path)
+
+
+@cmd("path", "Print the full path of a file or folder", "path <name>")
+def print_path(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
+    if piped:
+        name = piped[0]
+    else:
+        if len(args) < 1:
+            out("Missing name.")
+            return
+        name = args[0]
+
+    content = get(name, File | Folder)
+    if content is None:
+        out(f"File or folder {name} not found.")
+    else:
+        out(content.path)
+
+
+@cmd("filter", "Filter the output of a command by a keyword", "filter <keyword>")
+def filter_output(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
+    if piped is None:
+        out("No input to filter.")
+        return
+
+    if len(args) < 1:
+        out("Missing keyword.")
+        return
+
+    keyword = args[0]
+    for line in piped:
+        if keyword in line:
+            out(line)
 
 
 @cmd("help", "Show this help message")
@@ -273,6 +314,126 @@ def split_pipes_and_strings(command: str) -> list[str]:
     return out
 
 
+@dataclass
+class ParsedCommand:
+    command: str
+    args: list[str]
+    output_file: str | None = None
+    append_output_file: bool = False
+    is_piped: bool = False
+
+
+def parse_commands(commands: str) -> list[ParsedCommand]:
+    parsed_commands: list[ParsedCommand] = []
+    current_command = ""
+    in_string = False
+    escape_next = False
+    current_args: list[str] = []
+    in_command = True
+    current_arg = ""
+    output_file: str | None = None
+    in_output_file = False
+    append_output_file = False
+    for i, char in enumerate(commands):
+        if escape_next:
+            if in_output_file:
+                output_file = (output_file or "") + char
+            elif in_command:
+                current_command += char
+            else:
+                current_arg += char
+            escape_next = False
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if char == "\\":
+            escape_next = True
+            continue
+        if char == " " and not in_string:
+            if in_command and current_command:
+                in_command = False
+                continue
+            elif not in_output_file:
+                if current_arg:
+                    current_args.append(current_arg)
+                    current_arg = ""
+                continue
+            else:
+                if output_file is not None:
+                    in_output_file = False
+                    continue
+        if char == ">" and not in_string:
+            if i > 0 and commands[i - 1] == ">":
+                append_output_file = True
+                continue
+            else:
+                if current_arg:
+                    current_args.append(current_arg)
+                    current_arg = ""
+                in_output_file = True
+                output_file = None
+                continue
+
+        if char == "|" and not in_string:
+            if output_file is not None:
+                print(f"Error: Cannot pipe after redirecting output to a file.")
+                return []
+            if current_arg:
+                current_args.append(current_arg)
+                current_arg = ""
+            parsed_commands.append(
+                ParsedCommand(
+                    current_command, current_args, output_file, append_output_file, True
+                )
+            )
+            current_command = ""
+            output_file = None
+            current_args = []
+            in_command = True
+            in_output_file = False
+            append_output_file = False
+            continue
+
+        if char == ";" and not in_string:
+            if current_arg:
+                current_args.append(current_arg)
+                current_arg = ""
+            parsed_commands.append(
+                ParsedCommand(
+                    current_command,
+                    current_args,
+                    output_file,
+                    append_output_file,
+                    False,
+                )
+            )
+            current_command = ""
+            output_file = None
+            current_args = []
+            in_command = True
+            in_output_file = False
+            append_output_file = False
+            continue
+
+        if in_output_file:
+            output_file = (output_file or "") + char
+        elif in_command:
+            current_command += char
+        else:
+            current_arg += char
+
+    if current_arg:
+        current_args.append(current_arg)
+    if current_command:
+        parsed_commands.append(
+            ParsedCommand(
+                current_command, current_args, output_file, append_output_file, False
+            )
+        )
+    return parsed_commands
+
+
 def run_command_piping(command: str, out: Callable[[str], Any] = print):
     cmd_list = command.split(";")
     for cmd in cmd_list:
@@ -280,24 +441,26 @@ def run_command_piping(command: str, out: Callable[[str], Any] = print):
         output_buffer: list[str] = []
         for i, c in enumerate(cmds):
             if i == len(cmds) - 1:
-                cmds = c.split(">>")
-                if len(cmds) > 1:
-                    file = get(cmds[1].strip(), File)
+                subcmds = c.split(">>")
+                if len(subcmds) > 1:
+                    file = get(subcmds[1].strip(), File)
                     if file:
-                        run_command(cmds[0].strip(), file.content.append, output_buffer)
+                        run_command(
+                            subcmds[0].strip(), file.content.append, output_buffer
+                        )
                     else:
-                        out(f"File {cmds[1].strip()} not found.")
+                        out(f"File {subcmds[1].strip()} not found.")
                 else:
-                    cmds = c.split(">")
-                    if len(cmds) > 1:
-                        file = get(cmds[1].strip(), File)
+                    subcmds = c.split(">")
+                    if len(subcmds) > 1:
+                        file = get(subcmds[1].strip(), File)
                         if file:
                             file.content.clear()
                             run_command(
-                                cmds[0].strip(), file.content.append, output_buffer
+                                subcmds[0].strip(), file.content.append, output_buffer
                             )
                         else:
-                            out(f"File {cmds[1].strip()} not found.")
+                            out(f"File {subcmds[1].strip()} not found.")
                     else:
                         run_command(c.strip(), out, output_buffer)
 
@@ -317,12 +480,67 @@ def run_command(
         out(f"Unknown command: {cmd_prefix}")
 
 
+def _run_command(
+    command: str,
+    args: list[str],
+    out: Callable[[str], Any],
+    piped: list[str] | None = None,
+):
+    cmd_prefix = command.split(" ")[0]
+
+    if cmd_prefix in commands:
+        commands[cmd_prefix].func(args, out, piped)
+    else:
+        out(f"Unknown command: {cmd_prefix}")
+
+
+def run_commands(parsed_commands: list[ParsedCommand]):
+    output_buffer: list[str] = []
+    input_buffer: list[str] = []
+    for cmd in parsed_commands:
+        if cmd.is_piped:
+            output_buffer.clear()
+            _run_command(
+                cmd.command,
+                cmd.args,
+                output_buffer.append,
+                input_buffer
+            )
+            input_buffer = output_buffer.copy()
+        else:
+            if cmd.output_file:
+                file = get(cmd.output_file, File)
+                if file:
+                    if cmd.append_output_file:
+                        _run_command(
+                            cmd.command,
+                            cmd.args,
+                            file.content.append,
+                            input_buffer
+                        )
+                    else:
+                        file.content.clear()
+                        _run_command(
+                            cmd.command,
+                            cmd.args,
+                            file.content.append,
+                            input_buffer
+                        )
+            else:
+                _run_command(
+                    cmd.command, cmd.args, print, input_buffer if input_buffer else None
+                )
+            input_buffer = []
+
+
 def run_terminal():
     global running
     running = True
     while running:
-        command = input(f"{cwd.path}> ")
-        run_command_piping(command)
+        command = input(f"{cwd.path[:-1] if len(cwd.path) > 1 else cwd.path}> ")
+        # run_command_piping(command)
+        commands = parse_commands(command)
+        run_commands(commands)
         # cmd_list = command.split(";")
         # for cmd in cmd_list:
         #     cmds = cmd.split("|")
@@ -340,3 +558,8 @@ def run_terminal():
 
 if __name__ == "__main__":
     run_terminal()
+    # print(
+    #     parse_commands(
+    #         'echo "Hello, World!" ; echo "This is a test." > output.txt ; echo "Done."'
+    #     )
+    # )

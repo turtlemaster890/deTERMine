@@ -13,7 +13,8 @@ class File:
         self.name = name
         self.content = content
 
-        self.path = path + "/" + name if path else name
+        # self.path = path + "/" + name if path else name
+        self.path = path + name
 
         self.parent: Folder | None = parent
 
@@ -21,7 +22,9 @@ class File:
         self.parent = parent
 
     def update_path(self, path: str):
-        self.path = path + "/" + self.name if path else self.name
+        # self.path = path + "/" + self.name if path else self.name
+        # self.path = path + "/" + self.name
+        self.path = path + self.name
 
     def update_name(self, new_name: str):
         self.name = new_name
@@ -56,7 +59,8 @@ class Folder:
         self.name = name
         self.contents = contents
 
-        self.path = path + "/" + name if path else name
+        # self.path = path + "/" + name if path else name
+        self.path = path + name + "/"
 
         self.parent: Folder | None = parent
 
@@ -70,7 +74,9 @@ class Folder:
             content.update_parent(self)
 
     def update_path(self, path: str):
-        self.path = path + "/" + self.name if path else self.name
+        # self.path = path + "/" + self.name if path else self.name
+        # self.path = path + "/" + self.name
+        self.path = path + self.name + "/"
         for content in self.contents:
             content.update_path(self.path)
 
