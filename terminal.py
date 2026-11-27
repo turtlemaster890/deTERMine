@@ -6,6 +6,7 @@ from Internals import AccessBuilder, File, Folder
 
 running: bool = True
 
+prev_superuser: bool = False
 superuser: bool = False
 
 
@@ -391,6 +392,8 @@ def sudo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
         out("Missing command.")
         raise StopExecution
     global superuser
+    global prev_superuser
+    prev_superuser = superuser
     superuser = True
     _run_command(args[0], args[1:], out, piped)
 
@@ -648,7 +651,7 @@ def run_commands(parsed_commands: list[ParsedCommand]):
     except PermissionError as e:
         print(e)
     finally:
-        superuser = False
+        superuser = prev_superuser
 
 
 def run_terminal():
