@@ -195,11 +195,11 @@ def execute_file(
         out(f"File {file_name} not found.")
         return
 
-    if file.extension != "ex":
-        out(f"File {file_name} is not a .ex file.")
-        return
+    # if file.extension != "ex":
+    #     out(f"File {file_name} is not a .ex file.")
+    #     return
 
-    file.for_line(lambda line: run_command_piping(line, out))
+    file.for_line(lambda line: run_commands(parse_commands(line)))
 
 
 @cmd("echo", "Print a message to the output buffer", "echo <message>")
