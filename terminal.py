@@ -118,13 +118,14 @@ def change_directory(
     else:
         if len(args) < 1:
             out("Missing folder name.")
-            return
+            raise StopExecution
         folder_name = args[0]
     next_folder = get(folder_name, Folder)
     if next_folder is not None:
         cwd = next_folder
     else:
         out(f"Folder {folder_name} not found.")
+        raise StopExecution
 
 
 @cmd("ls", "List the contents of the current directory")
@@ -144,23 +145,24 @@ def read_file(
     else:
         if len(args) < 1:
             out("Missing file name.")
-            return
+            raise StopExecution
         file_name = args[0]
     file = get(file_name, File)
     if file is not None:
         file.for_line(out)
     else:
         out(f"File {file_name} not found.")
+        raise StopExecution
 
 
 @cmd("rn", "Rename a file or folder", "rn <old_name> <new_name>")
 def rename(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
     if len(args) < 1:
         out("Missing original name.")
-        return
+        raise StopExecution
     if len(args) < 2:
         out("Missing new name.")
-        return
+        raise StopExecution
 
     old_name = args[0]
     new_name = args[1]
@@ -168,12 +170,12 @@ def rename(args: list[str], out: Callable[[str], Any], piped: list[str] | None =
     content = get(old_name, File | Folder)
     if content is None:
         out(f"File or folder {old_name} not found.")
-        return
+        raise StopExecution
 
     conflict = get(content.path.removesuffix(content.name) + new_name, File | Folder)
     if conflict is not None:
         out(f"A file or folder with name {new_name} already exists.")
-        return
+        raise StopExecution
 
     content.update_name(new_name)
 
@@ -187,13 +189,13 @@ def execute_file(
     else:
         if len(args) < 1:
             out("Missing file name.")
-            return
+            raise StopExecution
         file_name = args[0]
 
     file = get(file_name, File)
     if file is None:
         out(f"File {file_name} not found.")
-        return
+        raise StopExecution
 
     # if file.extension != "ex":
     #     out(f"File {file_name} is not a .ex file.")
@@ -209,7 +211,7 @@ def echo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     else:
         if len(args) < 1:
             out("Missing message.")
-            return
+            raise StopExecution
         message = " ".join(args)
     out(message)
 
@@ -221,7 +223,7 @@ def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     else:
         if len(args) < 1:
             out("Missing name.")
-            return
+            raise StopExecution
 
         name = args[0]
 
