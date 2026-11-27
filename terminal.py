@@ -83,6 +83,10 @@ def get(
     # return None
 
 
+class StopExecution(Exception):
+    pass
+
+
 def cmd(name: str, description: str = "", usage: str | None = None):
     if usage is None:
         usage = name
@@ -231,7 +235,7 @@ def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     results = cwd.find(name, exact)
     if not results:
         out(f"No files or folders found with name {name}.")
-        return
+        raise StopExecution
 
     for result in results:
         out(result.path)
@@ -253,7 +257,7 @@ def print_path(
     else:
         if len(args) < 1:
             out("Missing name.")
-            return
+            raise StopExecution
         name = args[0]
 
     content = get(name, File | Folder)
@@ -269,16 +273,70 @@ def filter_output(
 ):
     if piped is None:
         out("No input to filter.")
-        return
+        raise StopExecution
 
     if len(args) < 1:
         out("Missing keyword.")
-        return
+        raise StopExecution
 
     keyword = args[0]
     for line in piped:
         if keyword in line:
             out(line)
+
+
+@cmd("mk", "Create a new file", "mk <file_name>")
+def create_file(
+    args: list[str],
+    out: Callable[[str], Any],
+    piped: list[str] | None = None,
+):
+    if len(args) < 1:
+        out("Missing file name.")
+        raise StopExecution
+
+    file_name = args[0]
+
+    conflict = get(file_name, File)
+    if conflict is not None:
+        out(f"A file named {file_name} already exists.")
+        raise StopExecution
+
+    path = "/".join(file_name.split("/")[:-1])
+    parent = get(path, Folder) if path else cwd
+    if parent is None:
+        out(f"Parent folder {path} not found.")
+        raise StopExecution
+
+    new_file = File(file_name.split("/")[-1], [])
+    parent.add_content(new_file)
+
+
+@cmd("mkdir", "Create a new folder", "mkdir <folder_name>")
+def create_folder(
+    args: list[str],
+    out: Callable[[str], Any],
+    piped: list[str] | None = None,
+):
+    if len(args) < 1:
+        out("Missing folder name.")
+        raise StopExecution
+
+    folder_name = args[0]
+
+    conflict = get(folder_name, Folder)
+    if conflict is not None:
+        out(f"A folder named {folder_name} already exists.")
+        raise StopExecution
+
+    path = "/".join(folder_name.split("/")[:-1])
+    parent = get(path, Folder) if path else cwd
+    if parent is None:
+        out(f"Parent folder {path} not found.")
+        raise StopExecution
+
+    new_folder = Folder(folder_name.split("/")[-1], [])
+    parent.add_content(new_folder)
 
 
 @cmd("help", "Show this help message")
@@ -362,7 +420,7 @@ def parse_commands(commands: str) -> list[ParsedCommand]:
             else:
                 if output_file is not None:
                     in_output_file = False
-                    continue
+                continue
         if char == ">" and not in_string:
             if i > 0 and commands[i - 1] == ">":
                 append_output_file = True
@@ -497,40 +555,38 @@ def _run_command(
 def run_commands(parsed_commands: list[ParsedCommand]):
     output_buffer: list[str] = []
     input_buffer: list[str] = []
-    for cmd in parsed_commands:
-        if cmd.is_piped:
-            output_buffer.clear()
-            _run_command(
-                cmd.command,
-                cmd.args,
-                output_buffer.append,
-                input_buffer
-            )
-            input_buffer = output_buffer.copy()
-        else:
-            if cmd.output_file:
-                file = get(cmd.output_file, File)
-                if file:
-                    if cmd.append_output_file:
-                        _run_command(
-                            cmd.command,
-                            cmd.args,
-                            file.content.append,
-                            input_buffer
-                        )
-                    else:
-                        file.content.clear()
-                        _run_command(
-                            cmd.command,
-                            cmd.args,
-                            file.content.append,
-                            input_buffer
-                        )
+    try:
+        for cmd in parsed_commands:
+            if cmd.is_piped:
+                output_buffer.clear()
+                _run_command(cmd.command, cmd.args, output_buffer.append, input_buffer)
+                input_buffer = output_buffer.copy()
             else:
-                _run_command(
-                    cmd.command, cmd.args, print, input_buffer if input_buffer else None
-                )
-            input_buffer = []
+                if cmd.output_file:
+                    file = get(cmd.output_file, File)
+                    if file:
+                        if cmd.append_output_file:
+                            _run_command(
+                                cmd.command, cmd.args, file.content.append, input_buffer
+                            )
+                        else:
+                            file.content.clear()
+                            _run_command(
+                                cmd.command, cmd.args, file.content.append, input_buffer
+                            )
+                    else:
+                        print(f"File {cmd.output_file} not found.")
+                else:
+                    _run_command(
+                        cmd.command,
+                        cmd.args,
+                        print,
+                        input_buffer if input_buffer else None,
+                    )
+                input_buffer = []
+    except StopExecution:
+        for line in output_buffer:
+            print(line)
 
 
 def run_terminal():

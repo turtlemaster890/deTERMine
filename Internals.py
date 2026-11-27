@@ -68,6 +68,11 @@ class Folder:
             content.update_path(self.path)
             content.update_parent(self)
 
+    def add_content(self, content: File | Folder):
+        self.contents.append(content)
+        content.update_path(self.path)
+        content.update_parent(self)
+
     def update_parent(self, parent: Folder):
         self.parent = parent
         for content in self.contents:
