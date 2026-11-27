@@ -42,20 +42,99 @@ def get_args(command: str) -> list[str]:
     return command.split(" ")[1:]
 
 
+def parse_args(
+    args: list[str],
+    allowed_flags: set[str] | None = None,
+    value_flags: set[str] | None = None,
+) -> tuple[set[str], dict[str, str], list[str]]:
+    flags: set[str] = set()
+    flag_values: dict[str, str] = {}
+    positional_args: list[str] = []
+    after_double_dash = False
+    value_flags = value_flags or set()
+
+    def validate(name: str, prefix: str) -> None:
+        if allowed_flags is not None and name not in allowed_flags:
+            raise ValueError(f"Unknown option: {prefix}{name}")
+
+    i = 0
+
+    while i < len(args):
+        arg = args[i]
+
+        if after_double_dash:
+            positional_args.append(arg)
+            i += 1
+            continue
+        if arg == "--":
+            after_double_dash = True
+            i += 1
+            continue
+
+        if arg.startswith("--") and len(arg) > 2:
+            body = arg[2:]
+            if "=" in body:
+                name, val = body.split("=", 1)
+                validate(name, "--")
+                if name not in value_flags:
+                    raise ValueError(f"Option --{name} does not take a value.")
+                flag_values[name] = val
+            else:
+                name = body
+                if name in value_flags:
+                    if i + 1 < len(args):
+                        flag_values[name] = args[i + 1]
+                        i += 1
+                    else:
+                        raise ValueError(f"Option --{name} requires a value.")
+                else:
+                    validate(name, "--")
+                    flags.add(name)
+        elif arg.startswith("-") and len(arg) > 1:
+            body = arg[1:]
+            if "=" in body:
+                name, val = body.split("=", 1)
+                validate(name, "-")
+                if name not in value_flags:
+                    raise ValueError(f"Option -{name} does not take a value.")
+                flag_values[name] = val
+            else:
+                if body in value_flags:
+                    if i + 1 < len(args):
+                        flag_values[body] = args[i + 1]
+                        i += 1
+                    else:
+                        raise ValueError(f"Option -{body} requires a value.")
+                else:
+                    for char in body:
+                        validate(char, "-")
+                        if char in value_flags:
+                            raise ValueError(f"Option -{char} requires a value.")
+                        flags.add(char)
+        else:
+            positional_args.append(arg)
+        i += 1
+    return flags, flag_values, positional_args
+
+
+def has_flag(flags: set[str], flag: set[str]) -> bool:
+    return any(f in flags for f in flag)
+
+
 root: Folder = Folder(
     "",
     [
         Folder(
-            "folder1",
+            "Downloads",
             [
-                File("file1.txt", ["Hello, World!"]),
+                File("observation.txt", ["Hello, World!"]),
                 Folder(
-                    "subfolder1",
+                    "executables",
                     [
                         File(
-                            "file2.txt",
-                            ["This is a test file."],
-                            access=AccessBuilder.superuser_only(superuser_lambda),
+                            "list.ex",
+                            ["ls"],
+                            access=AccessBuilder.read_only(superuser_lambda),
                         )
                     ],
                 ),
@@ -269,28 +348,55 @@ def echo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     out(message)
 
 
-@cmd("find", "Find files or folders by name", "find <name> [--exact | -e]")
+@cmd(
+    "find",
+    "Find files or folders by name",
+    "find <name> [--exact | -e] [--type | -t <file|folder>]",
+)
 def find(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
-    if piped:
-        name = piped[0]
-    else:
-        if len(args) < 1:
-            out("Missing name.")
-            raise StopExecution
+    # if piped:
+    #     name = piped[0]
+    # else:
+    #     if len(args) < 1:
+    #         out("Missing name.")
+    #         raise StopExecution
 
-        name = args[0]
+    #     name = args[0]
 
-    exact = (
-        "--exact" in args
-        or ("--exact" in piped if piped else False)
-        or "-e" in args
-        or ("-e" in piped if piped else False)
+    # exact = (
+    #     "--exact" in args
+    #     or ("--exact" in piped if piped else False)
+    #     or "-e" in args
+    #     or ("-e" in piped if piped else False)
+    # )
+
+    flags, flag_values, positional_args = parse_args(
+        args, {"exact", "e"}, {"type", "t"}
     )
 
-    results = cwd.find(name, exact)
-    if not results:
-        out(f"No files or folders found with name {name}.")
-        raise StopExecution
+    # if len(positional_args) < 1:
+    #     out("Missing name.")
+    #     raise StopExecution
+
+    search = positional_args[0] if positional_args else ""
+
+    results = cwd.find(search, has_flag(flags, {"exact", "e"}))
+    # if not results:
+    #     out(f"No files or folders found with name {positional_args[0]}.")
+    #     raise StopExecution
+
+    searchType = flag_values.get("type") or flag_values.get("t")
+    if searchType:
+        if searchType not in {"file", "folder"}:
+            out(f"Invalid type: {searchType}. Must be 'file' or 'folder'.")
+            raise StopExecution
+
+        results = [
+            result
+            for result in results
+            if (isinstance(result, File) and searchType == "file")
+            or (isinstance(result, Folder) and searchType == "folder")
+        ]
 
     for result in results:
         if result.can_view():
@@ -669,7 +775,7 @@ def run_commands(parsed_commands: list[ParsedCommand]):
     except StopExecution:
         for line in output_buffer:
             print(line)
-    except PermissionError as e:
+    except (ValueError, PermissionError) as e:
         print(e)
     finally:
         superuser = prev_superuser
