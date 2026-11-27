@@ -391,13 +391,8 @@ def sudo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
         out("Missing command.")
         raise StopExecution
     global superuser
-    try:
-        superuser = True
-        command = args[0]
-        args = args[1:]
-        _run_command(command, args, out, piped)
-    finally:
-        superuser = False
+    superuser = True
+    _run_command(args[0], args[1:], out, piped)
 
 
 @cmd("help", "Show this help message")
@@ -616,6 +611,7 @@ def _run_command(
 def run_commands(parsed_commands: list[ParsedCommand]):
     output_buffer: list[str] = []
     input_buffer: list[str] = []
+    global superuser
     try:
         for cmd in parsed_commands:
             if cmd.is_piped:
@@ -651,6 +647,8 @@ def run_commands(parsed_commands: list[ParsedCommand]):
             print(line)
     except PermissionError as e:
         print(e)
+    finally:
+        superuser = False
 
 
 def run_terminal():
