@@ -138,6 +138,21 @@ root: Folder = Folder(
                         )
                     ],
                 ),
+                Folder(
+                    "finances",
+                    [
+                        File(
+                            "budget.txt",
+                            [
+                                "Neurological research: $1000",
+                                "Space exploration: $5000",
+                                "Bribes: $10000",
+                            ],
+                            access=AccessBuilder.read_only(superuser_lambda),
+                        )
+                    ],
+                    access=AccessBuilder.no_access(superuser_lambda),
+                ),
             ],
         ),
         Folder(
@@ -194,7 +209,7 @@ def get(
         make_if_not_found,
         prefer=expected_type if expected_type is not (File | Folder) else None,
     )
-    if isinstance(content, expected_type):
+    if isinstance(content, expected_type) and content.can_view():
         return content
     return None
     # content = cwd.retrieve_path(
@@ -429,7 +444,11 @@ def print_path(
         out(content.path)
 
 
-@cmd("filter", "Filter the output of a command by a keyword", "filter <keyword>")
+@cmd(
+    "filter",
+    "Filter the output of a command by a keyword",
+    "filter <keyword> [--exact | -e]",
+)
 def filter_output(
     args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
 ):
@@ -437,17 +456,25 @@ def filter_output(
         out("No input to filter.")
         raise StopExecution
 
-    if len(args) < 1:
-        out("Missing keyword.")
-        raise StopExecution
+    # if len(args) < 1:
+    #     out("Missing keyword.")
+    #     raise StopExecution
 
-    keyword = args[0]
-    for line in piped:
-        if keyword in line:
-            out(line)
+    flags, flag_values, positional_args = parse_args(args, {f"exact", "e"})
+
+    keyword = " ".join(positional_args) if positional_args else ""
+    if has_flag(flags, {"exact", "e"}):
+        for line in piped:
+            if line == keyword:
+                out(line)
+    else:
+        for line in piped:
+            if keyword in line:
+                out(line)
 
 
 @cmd("mk", "Create a new file", "mk <file_name>")
+@access(superuser_lambda)
 def create_file(
     args: list[str],
     out: Callable[[str], Any],
@@ -475,6 +502,7 @@ def create_file(
 
 
 @cmd("mkdir", "Create a new folder", "mkdir <folder_name>")
+@access(superuser_lambda)
 def create_folder(
     args: list[str],
     out: Callable[[str], Any],

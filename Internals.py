@@ -84,6 +84,8 @@ class File:
             method(line)
 
     def can_view(self) -> bool:
+        if self.parent:
+            return self.parent.can_view() and self.access._view()
         return self.access._view()
 
     @property
@@ -267,4 +269,6 @@ class Folder:
         return results
 
     def can_view(self) -> bool:
+        if self.parent:
+            return self.parent.can_view() and self.access._view()
         return self.access._view()
