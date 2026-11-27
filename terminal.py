@@ -380,8 +380,9 @@ def create_folder(
 def toggle_superuser(
     args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
 ):
-    global superuser
+    global superuser, prev_superuser
     superuser = not superuser
+    prev_superuser = superuser
     out(f"Superuser mode {'enabled' if superuser else 'disabled'}.")
 
 
