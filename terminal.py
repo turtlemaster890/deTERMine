@@ -525,12 +525,20 @@ def sudo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = N
     _run_command(args[0], args[1:], out, piped)
 
 
-@cmd("help", "Show this help message")
+@cmd("help", "Show this help message", "help [command]")
 def help(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
-    out("Available commands:")
-    for command in commands.values():
-        out(f"{command.name}: {command.description} ({command.usage})")
-    out("")
+    if len(args) > 0:
+        command_name = args[0]
+        if command_name in commands:
+            command = commands[command_name]
+            out(f"{command.name}: {command.description} ({command.usage})")
+        else:
+            out(f"Unknown command: {command_name}")
+    else:
+        out("Available commands:")
+        for command in commands.values():
+            out(f"{command.name}: {command.description} ({command.usage})")
+        out("")
 
 
 # commands: dict[str, Callable[[list[str]], Any]] = {
