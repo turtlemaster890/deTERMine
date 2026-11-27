@@ -1,5 +1,28 @@
 from __future__ import annotations
-from typing import Any, Callable
+from typing import Any, Callable, Self
+
+
+class AccessBuilder:
+    def __init__(self):
+        self._read: Callable[[], bool] = lambda: True
+        self._write: Callable[[], bool] = lambda: True
+        self._view: Callable[[], bool] = lambda: True
+
+    def read(self, method: Callable[[], bool]) -> Self:
+        self._read = method
+        return self
+
+    def write(self, method: Callable[[], bool]) -> Self:
+        self._write = method
+        return self
+
+    def view(self, method: Callable[[], bool]) -> Self:
+        self._view = method
+        return self
+
+    @classmethod
+    def default(cls) -> AccessBuilder:
+        return cls()
 
 
 class File:
@@ -9,14 +32,17 @@ class File:
         content: list[str],
         path: str = "",
         parent: Folder | None = None,
+        access: AccessBuilder = AccessBuilder.default(),
     ):
         self.name = name
-        self.content = content
+        self._content = content
 
         # self.path = path + "/" + name if path else name
         self.path = path + name
 
         self.parent: Folder | None = parent
+
+        self.access = access
 
     def update_parent(self, parent: Folder):
         self.parent = parent
@@ -34,11 +60,13 @@ class File:
         return self.name == name
 
     def print(self):
-        for line in self.content:
+        lines = self.content
+        for line in lines:
             print(line)
 
     def for_line(self, method: Callable[[str], Any]):
-        for line in self.content:
+        lines = self.content
+        for line in lines:
             method(line)
 
     @property
@@ -46,6 +74,20 @@ class File:
         if "." in self.name:
             return self.name.split(".")[-1]
         return ""
+
+    @property
+    def content(self) -> list[str]:
+        if self.access._read():
+            return self._content
+        else:
+            raise PermissionError(f"Access denied.")
+
+    @content.setter
+    def content(self, new_content: list[str]):
+        if self.access._write():
+            self._content = new_content
+        else:
+            raise PermissionError(f"Access denied.")
 
 
 class Folder:

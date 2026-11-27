@@ -2,9 +2,31 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
-from Internals import File, Folder
+from Internals import AccessBuilder, File, Folder
 
 running: bool = True
+
+superuser: bool = False
+
+
+def access(condition: Callable[[], bool]):
+    def decorator(func: Callable[..., Any]):
+        def wrapper(*args, **kwargs):
+            if condition():
+                return func(*args, **kwargs)
+            else:
+                raise PermissionError("Access denied.")
+
+        return wrapper
+
+    return decorator
+
+
+def combine_access(condition: Callable[[], bool]) -> Callable[[], bool]:
+    def combined_condition() -> bool:
+        return superuser or condition()
+
+    return combined_condition
 
 
 def command_is(command: str, prefix: str) -> bool:
@@ -27,7 +49,18 @@ root: Folder = Folder(
                 Folder("subfolder1", [File("file2.txt", ["This is a test file."])]),
             ],
         ),
-        Folder("folder2", [File("file3.txt", ["Another file."])]),
+        Folder(
+            "folder2",
+            [
+                File(
+                    "file3.txt",
+                    ["Another file."],
+                    access=AccessBuilder.default()
+                    .read(combine_access(lambda: input("Enter password: ") == "12345"))
+                    .write(lambda: superuser),
+                )
+            ],
+        ),
     ],
 )
 
@@ -341,6 +374,32 @@ def create_folder(
     parent.add_content(new_folder)
 
 
+@cmd("su", "Toggle superuser mode")
+@access(lambda: input("Enter superuser password: ") == "root")
+def toggle_superuser(
+    args: list[str], out: Callable[[str], Any], piped: list[str] | None = None
+):
+    global superuser
+    superuser = not superuser
+    out(f"Superuser mode {'enabled' if superuser else 'disabled'}.")
+
+
+@cmd("sudo", "Run a command with superuser privileges", "sudo <command>")
+@access(lambda: input("Enter superuser password: ") == "root")
+def sudo(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
+    if len(args) < 1:
+        out("Missing command.")
+        raise StopExecution
+    global superuser
+    try:
+        superuser = True
+        command = args[0]
+        args = args[1:]
+        _run_command(command, args, out, piped)
+    finally:
+        superuser = False
+
+
 @cmd("help", "Show this help message")
 def help(args: list[str], out: Callable[[str], Any], piped: list[str] | None = None):
     out("Available commands:")
@@ -567,17 +626,18 @@ def run_commands(parsed_commands: list[ParsedCommand]):
                 if cmd.output_file:
                     file = get(cmd.output_file, File)
                     if file:
+                        new_lines: list[str] = []
+                        _run_command(
+                            cmd.command, cmd.args, new_lines.append, input_buffer
+                        )
+
                         if cmd.append_output_file:
-                            _run_command(
-                                cmd.command, cmd.args, file.content.append, input_buffer
-                            )
+                            file.content = [*file.content, *new_lines]
                         else:
-                            file.content.clear()
-                            _run_command(
-                                cmd.command, cmd.args, file.content.append, input_buffer
-                            )
+                            file.content = new_lines
                     else:
                         print(f"File {cmd.output_file} not found.")
+                        raise StopExecution
                 else:
                     _run_command(
                         cmd.command,
@@ -589,6 +649,8 @@ def run_commands(parsed_commands: list[ParsedCommand]):
     except StopExecution:
         for line in output_buffer:
             print(line)
+    except PermissionError as e:
+        print(e)
 
 
 def run_terminal():
